@@ -90,3 +90,7 @@ The backend fixture provider reads the uploaded Excel/API-shaped data from `API_
 - [Troubleshooting](docs/troubleshooting.md)
 - [Client Handover](docs/client-handover.md)
 - [Delivery Report](DELIVERY_REPORT.md)
+
+## License
+
+This project is proprietary and all rights are reserved. See [LICENSE](LICENSE).
