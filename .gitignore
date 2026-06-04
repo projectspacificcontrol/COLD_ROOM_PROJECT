@@ -1,0 +1,112 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+*.cer
+secrets/
+infra/certs/
+
+# Local databases and backups
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+*.backup
+*.dump
+*.mdf
+*.ldf
+*.ndf
+services/api/local.db
+services/api/local_debug.db
+
+# Logs and runtime files
+logs/
+*.log
+*.pid
+*.seed
+*.pid.lock
+uvicorn*.log
+services/api/uvicorn*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+*.egg-info/
+dist/
+build/
+
+# Node / frontend
+node_modules/
+apps/web/node_modules/
+.npm/
+.pnpm-store/
+yarn-error.log*
+pnpm-debug.log*
+npm-debug.log*
+apps/web/dist/
+apps/web/build/
+apps/web/.vite/
+*.tsbuildinfo
+
+# Test artifacts
+playwright-report/
+test-results/
+apps/web/playwright-report/
+apps/web/test-results/
+coverage/
+apps/web/coverage/
+
+# Docker and deployment local overrides
+docker-compose.override.yml
+compose.override.yml
+*.local.yml
+
+# IDE/editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+.idea/
+*.swp
+*.swo
+*.tmp
+*.temp
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Generated archives/packages
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# Uploaded/private source data
+sample/
+*.xlsx~
+~$*.xlsx

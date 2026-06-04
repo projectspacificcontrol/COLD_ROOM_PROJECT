@@ -1,0 +1,77 @@
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q \"SELECT 1\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks:
+      - cold_room_internal
+
+  sqlserver-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      MSSQL_DATABASE: ${MSSQL_DATABASE}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      /bin/bash -c "/opt/mssql-tools18/bin/sqlcmd -S db -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q \"IF DB_ID('$${MSSQL_DATABASE}') IS NULL CREATE DATABASE [$${MSSQL_DATABASE}]\""
+    networks:
+      - cold_room_internal
+
+  api:
+    build:
+      context: ../services/api
+    env_file:
+      - ../.env
+    depends_on:
+      db:
+        condition: service_healthy
+      sqlserver-init:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    networks:
+      - cold_room_internal
+      - cold_room_edge
+
+  web:
+    build:
+      context: ../apps/web
+    env_file:
+      - ../.env
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
+    networks:
+      - cold_room_edge
+
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+      - web
+    ports:
+      - "8080:80"
+    networks:
+      - cold_room_edge
+
+volumes:
+  sqlserver_data:
+
+networks:
+  cold_room_internal:
+    internal: true
+  cold_room_edge:

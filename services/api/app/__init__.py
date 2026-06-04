@@ -1,0 +1,2 @@
+"""Cold room monitoring API."""
+
