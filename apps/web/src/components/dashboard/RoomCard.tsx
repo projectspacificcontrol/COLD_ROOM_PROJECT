@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+﻿import { ChevronRight } from "lucide-react";
 import type { RoomSnapshot } from "../../types/dashboard";
 import { statusLabel, statusStyles } from "./statusStyles";
 

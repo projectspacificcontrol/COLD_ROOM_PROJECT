@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Gauge, Thermometer, Warehouse } from "lucide-react";
+﻿import { Activity, AlertTriangle, Gauge, Thermometer, Warehouse } from "lucide-react";
 import type { Overview } from "../../types/dashboard";
 
 interface Props {

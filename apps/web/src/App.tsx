@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { CheckCircle2, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { FilterTabs, type RoomFilter } from "./components/dashboard/FilterTabs";
 import { OverviewCards } from "./components/dashboard/OverviewCards";
@@ -112,7 +112,7 @@ export function App() {
 
   return (
     <ErrorBoundary>
-      <main className="min-h-screen bg-[radial-gradient(ellipse_at_top_left,#152232,#0b1117_60%)] px-4 py-6 text-white sm:px-8">
+      <main className="dashboard-readable min-h-screen bg-[radial-gradient(ellipse_at_top_left,#152232,#0b1117_60%)] px-4 py-6 text-white sm:px-8">
         <div className="mx-auto max-w-7xl space-y-6">
           
           {/* Header Section */}
@@ -205,7 +205,7 @@ export function App() {
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#263442]/60 pb-3">
                   <h2 id="rooms-title" className="text-base font-black text-white flex items-center gap-2 tracking-tight">
                     Cold Rooms By Group
-                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest font-mono hidden sm:inline">— select any card for raw sensor charts</span>
+                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest font-mono hidden sm:inline">- select any card for raw sensor charts</span>
                   </h2>
                   <p className="text-[10px] font-black text-zinc-300 uppercase tracking-widest font-mono bg-[#111A22]/50 px-2.5 py-1 rounded-md border border-[#263442]/40">
                     Last Log: {snapshot.overview.last_log_time ? new Date(snapshot.overview.last_log_time).toLocaleTimeString() : "pending"}
