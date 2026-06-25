@@ -2,13 +2,14 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.deps import current_user
 from app.api.routes import admin, auth, dashboard, health, ingest, reports
 from app.core.config import settings
 from app.core.logging import configure_logging
-from app.core.security import InMemoryRateLimitMiddleware, IpAllowlistMiddleware, SecurityHeadersMiddleware
+from app.core.security import InMemoryRateLimitMiddleware, SecurityHeadersMiddleware
 from app.db.session import AsyncSessionLocal
 from app.services.ingestion import IngestionService
 from app.services.providers import build_provider
@@ -51,8 +52,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Dashboard access is controlled solely by admin-managed user accounts
+# (email + password, with activate/deactivate to grant/revoke). IP-based
+# allowlisting is intentionally not enforced.
 app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(IpAllowlistMiddleware)
 app.add_middleware(InMemoryRateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -67,8 +70,10 @@ for prefix in ("/api", "/api/v1"):
     app.include_router(health.ready_router, prefix=prefix)
     app.include_router(health.metrics_router, prefix=prefix)
     app.include_router(auth.router, prefix=prefix)
-    app.include_router(dashboard.router, prefix=prefix)
-    app.include_router(dashboard.live_router, prefix=prefix)
+    # Dashboard telemetry is gated behind an authenticated session. Anonymous
+    # callers receive 401 and the SPA redirects them to the login screen.
+    app.include_router(dashboard.router, prefix=prefix, dependencies=[Depends(current_user)])
+    app.include_router(dashboard.live_router, prefix=prefix, dependencies=[Depends(current_user)])
     app.include_router(ingest.router, prefix=prefix)
     app.include_router(reports.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)

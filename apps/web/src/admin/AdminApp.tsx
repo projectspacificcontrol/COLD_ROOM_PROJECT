@@ -7,8 +7,6 @@ import {
   FileClock,
   Gauge,
   ListChecks,
-  LogOut,
-  Network,
   Settings,
   Shield,
   Siren,
@@ -24,12 +22,12 @@ import {
   FileText
 } from "lucide-react";
 import { adminApi } from "../api/adminClient";
-import type { AdminAlert, AdminRoom, AuditLog, CurrentUser, IpAllowlistEntry, SensorFault, SystemSetting, ThresholdRule, UserRecord } from "../types/admin";
+import { UserBadge } from "../components/shared/UserBadge";
+import type { AdminAlert, AdminRoom, AuditLog, CurrentUser, SensorFault, SystemSetting, ThresholdRule, UserRecord } from "../types/admin";
 
 type AdminRoute =
   | "/admin"
   | "/admin/users"
-  | "/admin/ip-allowlist"
   | "/admin/thresholds"
   | "/admin/reports"
   | "/admin/alerts"
@@ -41,8 +39,7 @@ type Toast = { kind: "success" | "error"; message: string };
 
 const routes: Array<{ path: AdminRoute; label: string; icon: typeof Gauge }> = [
   { path: "/admin", label: "Dashboard", icon: Gauge },
-  { path: "/admin/users", label: "Users", icon: Users },
-  { path: "/admin/ip-allowlist", label: "IP Allowlist", icon: Network },
+  { path: "/admin/users", label: "Dashboard Access", icon: Users },
   { path: "/admin/thresholds", label: "Thresholds", icon: ListChecks },
   { path: "/admin/reports", label: "Reports", icon: Download },
   { path: "/admin/alerts", label: "Alerts", icon: Siren },
@@ -152,27 +149,16 @@ export function AdminApp() {
             <h2 className="text-xl font-bold text-white tracking-tight">{routes.find((route) => route.path === safePath)?.label}</h2>
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-[#0d1420] px-3.5 py-1.5 shadow-sm">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md border border-sky-500/20 bg-sky-500/10">
-                <span className="text-xs font-bold text-sky-300 uppercase">{user.email.charAt(0)}</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-semibold text-zinc-200">{user.email}</span>
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{user.role}</span>
-              </div>
-            </div>
-            <button
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-bold text-slate-100 shadow-sm transition hover:bg-slate-700 active:scale-95 cursor-pointer"
-              onClick={async () => {
+            <UserBadge
+              email={user.email}
+              role={user.role}
+              accent="sky"
+              onLogout={async () => {
                 await adminApi.logout();
                 setUser(null);
                 navigate("/admin/login");
               }}
-              type="button"
-            >
-              <LogOut className="h-4 w-4" />
-              Logout
-            </button>
+            />
           </div>
         </header>
 
@@ -181,7 +167,6 @@ export function AdminApp() {
           <MobileNav path={safePath} navigate={navigate} />
           {safePath === "/admin" && <AdminDashboard toast={showToast} />}
           {safePath === "/admin/users" && <UsersPage toast={showToast} />}
-          {safePath === "/admin/ip-allowlist" && <IpAllowlistPage toast={showToast} />}
           {safePath === "/admin/thresholds" && <ThresholdsPage toast={showToast} />}
           {safePath === "/admin/reports" && <ReportsPage toast={showToast} />}
           {safePath === "/admin/alerts" && <AlertsPage />}
@@ -266,7 +251,16 @@ function AdminLogin({ onLogin, toast }: { onLogin: (user: CurrentUser) => void; 
               onLogin(await adminApi.me());
               toast("success", "Signed in securely.");
             } catch (error) {
-              toast("error", (error as Error).message === "FORBIDDEN" ? "This IP is not allowed for admin access." : "Login failed.");
+              const message = (error as Error).message;
+              if (message === "UNAUTHENTICATED") {
+                toast("error", "Invalid email or password.");
+              } else if (message === "FORBIDDEN") {
+                toast("error", "Security check failed. Please refresh and try again.");
+              } else if (/too many|locked|attempt/i.test(message)) {
+                toast("error", message);
+              } else {
+                toast("error", "Login failed.");
+              }
             } finally {
               setLoading(false);
             }
@@ -493,30 +487,59 @@ function UsersPage({ toast }: { toast: (kind: Toast["kind"], message: string) =>
   const [role, setRole] = useState("viewer");
   const load = useCallback(() => adminApi.users().then(setRows), []);
   useEffect(() => { load(); }, [load]);
+
+  const toggleActive = async (row: UserRecord) => {
+    const grant = !row.is_active;
+    if (!confirm(`${grant ? "Grant" : "Revoke"} dashboard access for ${row.email}?`)) return;
+    await adminApi.updateUser(row.id, { is_active: grant });
+    toast("success", grant ? "Access granted — the user can sign in." : "Access revoked — the user can no longer sign in.");
+    load();
+  };
+
+  const resetPassword = async (row: UserRecord) => {
+    const next = prompt(`Set a new password for ${row.email} (min. 8 characters):`);
+    if (next === null) return;
+    if (next.length < 8) {
+      toast("error", "Password must be at least 8 characters.");
+      return;
+    }
+    await adminApi.updateUser(row.id, { password: next });
+    toast("success", "Password updated. Share it with the user securely.");
+  };
+
   return (
-    <Panel title="User Account Management">
-      <form 
-        className="mb-6 grid gap-4 md:grid-cols-4 items-end bg-[#0d1420]/30 p-5 rounded-2xl border border-[#1f2937]/50" 
-        onSubmit={async (event) => { 
-          event.preventDefault(); 
+    <Panel title="Dashboard Access — User Accounts">
+      <p className="mb-5 -mt-2 text-sm font-medium leading-relaxed text-slate-400">
+        Only the accounts listed here can sign in to the dashboard. Create an account with an email and password to
+        grant access, deactivate it to revoke access instantly, or reset a password at any time. Access is controlled
+        entirely from this page — there are no IP-based rules.
+      </p>
+      <form
+        className="mb-6 grid gap-4 md:grid-cols-4 items-end bg-[#0d1420]/30 p-5 rounded-2xl border border-[#1f2937]/50"
+        onSubmit={async (event) => {
+          event.preventDefault();
           if (!email || !password) {
             toast("error", "Please fill in all user credentials.");
             return;
           }
-          await adminApi.createUser({ email, password, role, is_active: true }); 
-          toast("success", "New user registered successfully."); 
-          setEmail(""); 
-          setPassword(""); 
-          load(); 
+          if (password.length < 8) {
+            toast("error", "Password must be at least 8 characters.");
+            return;
+          }
+          await adminApi.createUser({ email, password, role, is_active: true });
+          toast("success", "Account created — the user can now sign in to the dashboard.");
+          setEmail("");
+          setPassword("");
+          load();
         }}
       >
         <LabeledInput label="Email Address" value={email} onChange={setEmail} type="email" placeholder="user@company.com" />
         <LabeledInput label="Initial Password" value={password} onChange={setPassword} type="password" placeholder="Min. 8 chars" />
         <label className="block space-y-1.5">
           <span className="text-xs font-semibold text-zinc-400 tracking-wide">Privilege Role</span>
-          <select 
-            className="w-full input-premium select-premium text-white focus:border-sky-500 cursor-pointer" 
-            value={role} 
+          <select
+            className="w-full input-premium select-premium text-white focus:border-sky-500 cursor-pointer"
+            value={role}
             onChange={(e) => setRole(e.target.value)}
           >
             <option className="bg-[#0d1420]">viewer</option>
@@ -526,19 +549,19 @@ function UsersPage({ toast }: { toast: (kind: Toast["kind"], message: string) =>
         </label>
         <button className="w-full rounded-xl btn-primary py-3 text-sm font-bold text-white transition cursor-pointer flex items-center justify-center gap-1.5" type="submit">
           <Users className="h-4 w-4" />
-          Create User
+          Grant Access
         </button>
       </form>
 
-      <DataTable 
-        headers={["User Principal", "Role Authorization", "Status", "Date Created", "Administrative Options"]} 
+      <DataTable
+        headers={["User Principal", "Role Authorization", "Access Status", "Date Created", "Administrative Options"]}
         rows={rows.map((row) => {
           const roleBadge = (
             <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase tracking-wider ${
-              row.role === "admin" 
-                ? "bg-sky-500/10 border-sky-500/20 text-sky-400" 
-                : row.role === "operator" 
-                ? "bg-sky-500/10 border-sky-500/20 text-sky-400" 
+              row.role === "admin"
+                ? "bg-sky-500/10 border-sky-500/20 text-sky-400"
+                : row.role === "operator"
+                ? "bg-sky-500/10 border-sky-500/20 text-sky-400"
                 : "bg-zinc-800 border-zinc-705 text-zinc-400"
             }`}>
               {row.role}
@@ -548,7 +571,7 @@ function UsersPage({ toast }: { toast: (kind: Toast["kind"], message: string) =>
           const statusBadge = (
             <span className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-xs font-bold ${row.is_active ? "text-emerald-400" : "text-zinc-500"}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${row.is_active ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"}`} />
-              {row.is_active ? "ACTIVE" : "INACTIVE"}
+              {row.is_active ? "CAN SIGN IN" : "REVOKED"}
             </span>
           );
 
@@ -561,115 +584,34 @@ function UsersPage({ toast }: { toast: (kind: Toast["kind"], message: string) =>
             roleBadge,
             statusBadge,
             createdCell,
-            <button 
-              className="text-rose-450 hover:text-rose-400 hover:underline transition font-bold text-xs cursor-pointer flex items-center gap-1.5" 
-              onClick={async () => { 
-                if (confirm(`Delete account for user ${row.email}?`)) { 
-                  await adminApi.deleteUser(row.id); 
-                  toast("success", "User account deleted successfully."); 
-                  load(); 
-                } 
-              }}
-            >
-              Delete Account
-            </button>
-          ];
-        })} 
-      />
-    </Panel>
-  );
-}
-
-function IpAllowlistPage({ toast }: { toast: (kind: Toast["kind"], message: string) => void }) {
-  const [rows, setRows] = useState<IpAllowlistEntry[]>([]);
-  const [form, setForm] = useState({ cidr: "", label: "", description: "", scope: "dashboard_access", is_active: true });
-  const load = useCallback(() => adminApi.ipAllowlist().then(setRows), []);
-  useEffect(() => { load(); }, [load]);
-  return (
-    <Panel title="IP Access Firewall Control">
-      <form 
-        className="mb-6 grid gap-4 md:grid-cols-5 items-end bg-[#0d1420]/30 p-5 rounded-2xl border border-[#1f2937]/50" 
-        onSubmit={async (event) => { 
-          event.preventDefault(); 
-          if (!form.cidr) {
-            toast("error", "CIDR block cannot be empty.");
-            return;
-          }
-          await adminApi.createIp(form); 
-          toast("success", "Firewall IP rule added successfully."); 
-          setForm({ cidr: "", label: "", description: "", scope: "dashboard_access", is_active: true }); 
-          load(); 
-        }}
-      >
-        <LabeledInput label="CIDR / IP Block" value={form.cidr} onChange={(cidr) => setForm({ ...form, cidr })} placeholder="e.g. 192.168.1.0/24" />
-        <LabeledInput label="Rule Label" value={form.label} onChange={(label) => setForm({ ...form, label })} placeholder="Office WAN" />
-        <LabeledInput label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} placeholder="Optional notes" />
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold text-zinc-400 tracking-wide">Access Scope</span>
-          <select 
-            className="w-full input-premium select-premium text-white focus:border-sky-500 cursor-pointer" 
-            value={form.scope} 
-            onChange={(e) => setForm({ ...form, scope: e.target.value })}
-          >
-            <option value="dashboard_access" className="bg-[#0d1420]">dashboard_access</option>
-            <option value="admin_access" className="bg-[#0d1420]">admin_access</option>
-            <option value="api_access" className="bg-[#0d1420]">api_access</option>
-          </select>
-        </label>
-        <button className="w-full rounded-xl btn-primary py-3 text-sm font-bold text-white transition cursor-pointer flex items-center justify-center gap-1.5" type="submit">
-          <Network className="h-4 w-4" />
-          Add Rule
-        </button>
-      </form>
-
-      <DataTable 
-        headers={["Network Address", "Label Reference", "Access Scope", "Status", "Last Matched", "Actions"]} 
-        rows={rows.map((row) => {
-          const scopeBadge = (
-            <span className="font-semibold text-sky-400 text-xs font-mono bg-sky-500/10 px-2.5 py-0.5 border border-sky-500/20 rounded-md">
-              {row.scope}
-            </span>
-          );
-
-          const statusBadge = (
-            <span className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-xs font-bold ${row.is_active ? "text-emerald-400" : "text-zinc-550"}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${row.is_active ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"}`} />
-              {row.is_active ? "ENABLED" : "DISABLED"}
-            </span>
-          );
-
-          return [
-            <span className="font-mono font-semibold text-white">{row.cidr}</span>,
-            <span className="text-zinc-300 font-semibold">{row.label || "—"}</span>,
-            scopeBadge,
-            statusBadge,
-            <span className="text-zinc-400 text-xs font-semibold">{row.last_matched_at ? new Date(row.last_matched_at).toLocaleString() : "Never"}</span>,
-            <div className="flex gap-4">
-              <button 
-                className={`font-bold text-xs hover:underline cursor-pointer ${row.is_active ? "text-amber-400" : "text-emerald-400"}`} 
-                onClick={async () => { 
-                  await adminApi.updateIp(row.id, { ...row, is_active: !row.is_active }); 
-                  toast("success", `Rule ${row.is_active ? "disabled" : "enabled"} successfully.`); 
-                  load(); 
-                }}
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                className={`font-bold text-xs hover:underline cursor-pointer ${row.is_active ? "text-amber-400" : "text-emerald-400"}`}
+                onClick={() => toggleActive(row)}
               >
-                {row.is_active ? "Disable" : "Enable"}
+                {row.is_active ? "Revoke Access" : "Grant Access"}
               </button>
-              <button 
-                className="text-rose-455 hover:text-rose-400 hover:underline transition font-bold text-xs cursor-pointer" 
-                onClick={async () => { 
-                  if (confirm(`Remove IP rule for block ${row.cidr}?`)) { 
-                    await adminApi.deleteIp(row.id); 
-                    toast("success", "IP rule removed successfully."); 
-                    load(); 
-                  } 
+              <button
+                className="text-sky-400 hover:text-sky-300 hover:underline transition font-bold text-xs cursor-pointer"
+                onClick={() => resetPassword(row)}
+              >
+                Reset Password
+              </button>
+              <button
+                className="text-rose-450 hover:text-rose-400 hover:underline transition font-bold text-xs cursor-pointer"
+                onClick={async () => {
+                  if (confirm(`Delete account for user ${row.email}?`)) {
+                    await adminApi.deleteUser(row.id);
+                    toast("success", "User account deleted successfully.");
+                    load();
+                  }
                 }}
               >
                 Delete
               </button>
             </div>
           ];
-        })} 
+        })}
       />
     </Panel>
   );

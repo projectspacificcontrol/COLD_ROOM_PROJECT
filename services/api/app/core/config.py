@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     api_ip_allowlist: str = ""
     api_rate_limit_per_minute: int = 120
     api_login_rate_limit_per_minute: int = 10
+    api_login_max_failed_attempts: int = 3
+    api_login_lockout_minutes: int = 10
     api_dev_fixture_enabled: bool = True
     api_data_provider: str = "excel_fixture"
     api_poll_interval_seconds: int = 60

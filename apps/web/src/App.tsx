@@ -1,24 +1,88 @@
-﻿import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { FilterTabs, type RoomFilter } from "./components/dashboard/FilterTabs";
 import { OverviewCards } from "./components/dashboard/OverviewCards";
 import { RoomDrawer } from "./components/dashboard/RoomDrawer";
 import { RoomGroup } from "./components/dashboard/RoomGroup";
-import { AdminPanel } from "./components/admin/AdminPanel";
 import { ErrorBoundary } from "./components/shared/ErrorBoundary";
 import { OverviewSkeleton, RoomGridSkeleton } from "./components/shared/SkeletonLoader";
 import { ForbiddenScreen } from "./components/shared/ForbiddenScreen";
+import { UserBadge } from "./components/shared/UserBadge";
+import { LoginScreen } from "./components/auth/LoginScreen";
 import { useDashboard } from "./hooks/useDashboard";
-import type { UserRole } from "./types/dashboard";
+import { adminApi } from "./api/adminClient";
+import type { CurrentUser } from "./types/admin";
 import { AdminApp } from "./admin/AdminApp";
+
+// Login is always required when running the real app — every visitor must
+// authenticate with an admin-issued email + password before the dashboard
+// opens. Only the unit-test runner (vitest, mode === "test") bypasses the gate,
+// since it renders against fixtures with no backend to authenticate against.
+const AUTH_REQUIRED = import.meta.env.MODE !== "test";
+const DEMO_USER: CurrentUser = { id: 0, email: "demo@sensorcloud.local", role: "admin" };
 
 export function App() {
   if (window.location.pathname.startsWith("/admin")) {
     return <AdminApp />;
   }
+  return <DashboardGate />;
+}
 
-  const [role, setRole] = useState<UserRole>("admin");
-  const [ipBlocked, setIpBlocked] = useState(() => localStorage.getItem("SIMULATE_IP_BLOCK") === "true");
+function DashboardGate() {
+  const [user, setUser] = useState<CurrentUser | null>(AUTH_REQUIRED ? null : DEMO_USER);
+  const [checking, setChecking] = useState(AUTH_REQUIRED);
+
+  // Resume an existing session on load so a logged-in operator is not forced to
+  // re-authenticate on every refresh.
+  useEffect(() => {
+    if (!AUTH_REQUIRED) return;
+    let cancelled = false;
+    adminApi
+      .me()
+      .then((nextUser) => {
+        if (!cancelled) setUser(nextUser);
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    if (AUTH_REQUIRED) {
+      await adminApi.logout().catch(() => undefined);
+    }
+    setUser(null);
+  }, []);
+
+  if (checking) {
+    return <SessionLoading />;
+  }
+
+  if (!user) {
+    return <LoginScreen onLogin={setUser} />;
+  }
+
+  return <DashboardView user={user} onLogout={handleLogout} />;
+}
+
+function SessionLoading() {
+  return (
+    <main className="grid min-h-screen place-items-center bg-[radial-gradient(ellipse_at_top_left,#152232,#0b1117_60%)] text-sm font-semibold text-zinc-300">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-[#10B981]" />
+        <span className="font-mono text-xs uppercase tracking-widest text-zinc-400">Verifying secure session…</span>
+      </div>
+    </main>
+  );
+}
+
+function DashboardView({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const {
@@ -28,11 +92,17 @@ export function App() {
     history,
     error,
     connectionState,
-    setSelectedRoom,
-    setError
+    setSelectedRoom
   } = useDashboard(refreshTrigger);
 
   const [filter, setFilter] = useState<RoomFilter>("all");
+
+  // A 401 means the session expired or was revoked — return to the login screen.
+  useEffect(() => {
+    if (error === "UNAUTHENTICATED") {
+      onLogout();
+    }
+  }, [error, onLogout]);
 
   const counts = useMemo(
     () => ({
@@ -57,30 +127,18 @@ export function App() {
     );
   }, [snapshot, filter]);
 
-  const toggleIpBlock = () => {
-    const nextVal = !ipBlocked;
-    localStorage.setItem("SIMULATE_IP_BLOCK", nextVal ? "true" : "false");
-    setIpBlocked(nextVal);
-    setRefreshTrigger((prev) => prev + 1);
-  };
+  // Session expiring — hold a quiet loading state while the gate swaps in the login screen.
+  if (error === "UNAUTHENTICATED") {
+    return <SessionLoading />;
+  }
 
-  const handleUnlockRequest = () => {
-    setRole("admin");
-  };
-
-  // 403 Forbidden Screen handling
+  // 403 Forbidden Screen handling (IP allowlist enforced by the API)
   if (error === "403_FORBIDDEN") {
-    return (
-      <ForbiddenScreen
-        isSimulated={ipBlocked}
-        onDisableSimulation={toggleIpBlock}
-        onRetry={() => setRefreshTrigger((prev) => prev + 1)}
-      />
-    );
+    return <ForbiddenScreen onRetry={() => setRefreshTrigger((prev) => prev + 1)} />;
   }
 
   // General error handling
-  if (error && error !== "403_FORBIDDEN") {
+  if (error) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(ellipse_at_top_left,#152232,#0b1117_60%)] p-6 text-white text-center">
         <div className="max-w-md rounded-xl border border-[#263442] bg-[#111A22] p-8 space-y-4 shadow-md">
@@ -114,7 +172,7 @@ export function App() {
     <ErrorBoundary>
       <main className="dashboard-readable min-h-screen bg-[radial-gradient(ellipse_at_top_left,#152232,#0b1117_60%)] px-4 py-6 text-white sm:px-8">
         <div className="mx-auto max-w-7xl space-y-6">
-          
+
           {/* Header Section */}
           <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#263442] pb-5">
             <div>
@@ -122,9 +180,8 @@ export function App() {
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-0.5">Cold Storage Temperature Dashboard</h1>
             </div>
 
-            {/* Simulated environment controllers */}
             <div className="flex flex-wrap items-center gap-3">
-              
+
               {/* Connection Indicator Widget */}
               <div
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-black select-none font-mono ${
@@ -154,34 +211,14 @@ export function App() {
                 )}
               </div>
 
-              {/* Mock Auth Gate Dropdown */}
-              <div className="inline-flex items-center gap-2 bg-[#111A22]/70 border border-[#263442] px-3 py-1.5 rounded-lg">
-                <span className="text-[9px] font-black text-zinc-450 uppercase tracking-widest font-mono">Role:</span>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="bg-transparent text-xs font-black text-white outline-none cursor-pointer border-none py-0.5 hover:text-zinc-200 transition font-mono uppercase tracking-wider"
-                  aria-label="Toggle user authorization role"
-                >
-                  <option value="admin" className="bg-[#111A22] text-white font-semibold">Administrator</option>
-                  <option value="operator" className="bg-[#111A22] text-white font-semibold">Operator</option>
-                  <option value="viewer" className="bg-[#111A22] text-white font-semibold">Viewer (ReadOnly)</option>
-                </select>
-              </div>
-
-              {/* IP Allowlist Simulation Switcher */}
-              <button
-                onClick={toggleIpBlock}
-                className={`text-xs font-black uppercase tracking-wider font-mono px-3.5 py-1.5 rounded-lg border transition select-none cursor-pointer outline-none active:scale-95 ${
-                  ipBlocked
-                    ? "bg-rose-600 border-rose-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.25)] animate-pulse"
-                    : "bg-[#111A22]/60 border-[#263442] text-zinc-300 hover:text-white hover:border-[#384c60] hover:bg-[#111A22]"
-                }`}
-                type="button"
-                aria-label={ipBlocked ? "Disable IP Address allowlist restriction simulation" : "Enable IP Address allowlist restriction simulation"}
-              >
-                {ipBlocked ? "Simulating Blocked IP" : "Simulate 403 WAN"}
-              </button>
+              {/* Authenticated session badge — round avatar, click for details + logout.
+                  Logout is offered only for real sessions (demo mode has no backend session). */}
+              <UserBadge
+                email={user.email}
+                role={user.role}
+                accent="emerald"
+                onLogout={AUTH_REQUIRED ? onLogout : undefined}
+              />
             </div>
           </header>
 
@@ -211,7 +248,7 @@ export function App() {
                     Last Log: {snapshot.overview.last_log_time ? new Date(snapshot.overview.last_log_time).toLocaleTimeString() : "pending"}
                   </p>
                 </div>
-                
+
                 <FilterTabs active={filter} counts={counts} onChange={setFilter} />
 
                 {/* Grid of rooms or Centered Empty State */}
@@ -233,9 +270,6 @@ export function App() {
                   </div>
                 )}
               </section>
-
-              {/* Secured Administrator Actions */}
-              <AdminPanel role={role} onUnlockRequest={handleUnlockRequest} />
             </>
           )}
 

@@ -2,7 +2,9 @@ import { z } from "zod";
 import type { DashboardSnapshot, HistoryPoint, ConnectionState } from "../types/dashboard";
 import { fixtureDashboard, fixtureHistory } from "./fixtures";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
+// Same-origin by default (served via the Vite dev proxy or the prod nginx
+// gateway) so auth cookies stay first-party. Override only for split deployments.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 const USE_FIXTURES = import.meta.env.VITE_USE_FIXTURES !== "false";
 
 // --- Zod Runtime Validation Schemas ---
@@ -74,11 +76,15 @@ export async function fetchDashboard(): Promise<DashboardSnapshot> {
   }
 
   const response = await fetch(`${API_BASE_URL}/dashboard/summary`, { credentials: "include" });
-  
+
+  if (response.status === 401) {
+    throw new Error("UNAUTHENTICATED");
+  }
+
   if (response.status === 403) {
     throw new Error("403_FORBIDDEN");
   }
-  
+
   if (!response.ok) {
     throw new Error("Unable to fetch dashboard snapshot");
   }
@@ -94,7 +100,11 @@ export async function fetchRoomHistory(roomNumber: number): Promise<HistoryPoint
   }
 
   const response = await fetch(`${API_BASE_URL}/dashboard/rooms/${roomNumber}/history`, { credentials: "include" });
-  
+
+  if (response.status === 401) {
+    throw new Error("UNAUTHENTICATED");
+  }
+
   if (response.status === 403) {
     throw new Error("403_FORBIDDEN");
   }

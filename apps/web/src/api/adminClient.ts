@@ -4,14 +4,15 @@ import type {
   AdminRoom,
   AuditLog,
   CurrentUser,
-  IpAllowlistEntry,
   SensorFault,
   SystemSetting,
   ThresholdRule,
   UserRecord
 } from "../types/admin";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+// Same-origin by default (Vite dev proxy / prod nginx gateway) so the auth,
+// CSRF and session cookies remain first-party. Override only for split hosts.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 let csrfToken: string | null = null;
 
@@ -51,10 +52,6 @@ export const adminApi = {
   createUser: (payload: Record<string, unknown>) => request<UserRecord>("/admin/users", { method: "POST", body: JSON.stringify(payload) }),
   updateUser: (id: number, payload: Record<string, unknown>) => request<UserRecord>(`/admin/users/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteUser: (id: number) => request<{ status: string }>(`/admin/users/${id}`, { method: "DELETE" }),
-  ipAllowlist: () => request<IpAllowlistEntry[]>("/admin/ip-allowlist"),
-  createIp: (payload: Record<string, unknown>) => request<{ id: number }>("/admin/ip-allowlist", { method: "POST", body: JSON.stringify(payload) }),
-  updateIp: (id: number, payload: Record<string, unknown>) => request<IpAllowlistEntry>(`/admin/ip-allowlist/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  deleteIp: (id: number) => request<{ status: string }>(`/admin/ip-allowlist/${id}`, { method: "DELETE" }),
   thresholds: () => request<ThresholdRule[]>("/admin/thresholds"),
   upsertThreshold: (payload: Record<string, unknown>) => request<{ id: number }>("/admin/thresholds", { method: "POST", body: JSON.stringify(payload) }),
   deleteThreshold: (id: number) => request<{ status: string }>(`/admin/thresholds/${id}`, { method: "DELETE" }),
